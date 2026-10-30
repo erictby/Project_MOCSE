@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+artifacts/
+release/
+*.user
+settings.json
+_MOCSE_Backups/
