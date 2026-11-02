@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>MOCSE</AssemblyName><Version>0.1.0</Version><ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode></PropertyGroup>
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>MOCSE</AssemblyName><Version>0.2.0</Version><ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode></PropertyGroup>
   <ItemGroup><ProjectReference Include="..\Mocse.Core\Mocse.Core.csproj" /></ItemGroup>
 </Project>
