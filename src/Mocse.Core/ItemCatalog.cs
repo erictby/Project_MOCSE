@@ -2,7 +2,11 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Mocse.Core;
 
-public record CatalogItem(string Id, string Name, string Category, string Quality, string Type);
+public record CatalogItem(string Id, string Name, string Category, string Quality, string Type, string Description, string EnglishName, string EnglishDescription, string UnitTypeAllowed)
+{
+    public bool UsableBy(string unitType) => UnitTypeAllowed == "All" || UnitTypeAllowed.Contains(unitType, StringComparison.Ordinal);
+    public bool Equippable => UnitTypeAllowed is not ("" or "None");
+}
 public sealed class ItemCatalog
 {
     public Dictionary<string, CatalogItem> Items { get; } = new(StringComparer.Ordinal);
@@ -12,13 +16,8 @@ public sealed class ItemCatalog
         string path = Resolve(selected);
         if (!Directory.Exists(Path.Combine(path, "Items"))) throw new DirectoryNotFoundException("未找到 GameData/Items。请选择游戏目录、StreamingAssets 或 GameData 目录。");
         var catalog = new ItemCatalog { SourceDirectory = path };
-        var translations = new Dictionary<string, string>();
-        string lang = Path.Combine(path, "Languages", "Chinese.json");
-        if (File.Exists(lang))
-        {
-            var root = JsonNode.Parse(File.ReadAllText(lang));
-            foreach (var term in JsonData.Objects(root?["Terms"])) translations[JsonData.Text(term, "Key")] = JsonData.Text(term, "Translation");
-        }
+        var translations = LoadTranslations(path, "Chinese.json");
+        var english = LoadTranslations(path, "English.json");
         var raw = new Dictionary<string, (JsonObject Data, string Category)>();
         foreach (string file in Directory.EnumerateFiles(Path.Combine(path, "Items"), "*.json", SearchOption.AllDirectories))
             foreach (var item in JsonData.Objects(JsonNode.Parse(File.ReadAllText(file))))
@@ -38,12 +37,27 @@ public sealed class ItemCatalog
             string key = Field(id, "Name");
             string name = translations.GetValueOrDefault(key, key.Length > 0 ? key : id);
             name = Regex.Replace(name, "<[^>]+>", "");
-            catalog.Items[id] = new(id, name, row.Category, Quality(Field(id, "Quality")), Field(id, "ItemType"));
+            string descKey = Field(id, "Description");
+            string Strip(string text) => Regex.Replace(text, "<[^>]+>", "").Trim();
+            catalog.Items[id] = new(id, name, row.Category, Quality(Field(id, "Quality")), Field(id, "ItemType"),
+                Strip(translations.GetValueOrDefault(descKey, "")), Strip(english.GetValueOrDefault(key, "")), Strip(english.GetValueOrDefault(descKey, "")), Field(id, "UnitTypeAllowed"));
         }
         if (catalog.Items.Count == 0) throw new InvalidDataException("物品目录中没有可用的 ID。");
         return catalog;
     }
     public string NameOf(string id) => Items.TryGetValue(id, out var item) ? item.Name : id;
+    public string EnglishNameOf(string id) => Items.TryGetValue(id, out var item) ? item.EnglishName : "";
+    internal static Dictionary<string, string> LoadTranslations(string gameDataPath, string file)
+    {
+        var result = new Dictionary<string, string>();
+        string lang = Path.Combine(gameDataPath, "Languages", file);
+        if (File.Exists(lang))
+        {
+            var root = JsonNode.Parse(File.ReadAllText(lang));
+            foreach (var term in JsonData.Objects(root?["Terms"])) result[JsonData.Text(term, "Key")] = JsonData.Text(term, "Translation");
+        }
+        return result;
+    }
     private static string Resolve(string p)
     {
         foreach (var c in new[] { p, Path.Combine(p, "GameData"), Path.Combine(p, "StreamingAssets", "GameData"), Path.Combine(p, "Master of Command_Data", "StreamingAssets", "GameData") })

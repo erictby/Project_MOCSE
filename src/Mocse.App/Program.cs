@@ -49,6 +49,7 @@ public sealed class MainForm : Form
 {
     private SaveDocument? doc;
     private ItemCatalog catalog = new();
+    private UnitCatalog unitCatalog = new();
     private bool refreshing, smoke;
     private readonly Label fileInfo = Ui.Label("尚未打开存档 · 选择 .fcs 文件开始编辑", 55);
     private readonly Label status = Ui.Label("就绪 · 保存前自动备份，所有编辑先保留在内存中。", 46);
@@ -57,7 +58,6 @@ public sealed class MainForm : Form
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill, Padding = new Point(24, 9) };
     private readonly Dictionary<string, NumericUpDown> resources = new();
     private readonly DataGridView units = Ui.Grid(), officers = Ui.Grid(), items = Ui.Grid();
-    private readonly TextBox itemSearch = new() { Width = 320, PlaceholderText = "搜索中文名称、物品 ID 或所在位置" };
     private readonly List<Button> editButtons = new();
     private readonly string configPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
     private string lastBackup = "";
@@ -117,9 +117,10 @@ public sealed class MainForm : Form
     }
     private void BuildUnitsPage()
     {
-        Ui.Column(units, "Location", "所属编队", 155); Ui.Column(units, "Name", "部队名称", 180, fill: true);
-        Ui.Column(units, "Manpower", "当前兵力", 125, true); Ui.Column(units, "TargetManpower", "目标兵力", 125, true); Ui.Column(units, "MaxManpower", "基础上限", 125, true);
-        Ui.Column(units, "CurrentExperience", "当前经验", 110, true); Ui.Column(units, "CurrentLevel", "等级", 90); Ui.Column(units, "UnitID", "兵种 ID", 190);
+        Ui.Column(units, "Location", "所属编队", 130); Ui.Column(units, "Name", "部队名称", 150, fill: true);
+        Ui.Column(units, "Manpower", "当前兵力", 108, true); Ui.Column(units, "TargetManpower", "目标兵力", 108, true); Ui.Column(units, "MaxManpower", "基础上限", 108, true);
+        Ui.Column(units, "CurrentExperience", "当前经验", 103, true); Ui.Column(units, "CurrentLevel", "等级", 70);
+        Ui.Column(units, "UnitName", "兵种名称", 150); Ui.Column(units, "UnitEnglishName", "英文名称", 150); Ui.Column(units, "UnitID", "兵种 ID", 170);
         Page("部队", "双击绿色数值编辑；包含现役、预备队及将军卫队。经验为当前等级内的经验，不自动换算等级。\r\n目标兵力低于当前兵力可能触发游戏裁员；实际兵力上限还受游戏修正影响。", units);
     }
     private void BuildOfficersPage()
@@ -130,15 +131,14 @@ public sealed class MainForm : Form
     }
     private void BuildItemsPage()
     {
-        Ui.Column(items, "Location", "位置", 260); Ui.Column(items, "Name", "物品名称", 260, fill: true); Ui.Column(items, "ID", "物品 ID", 260); Ui.Column(items, "Amount", "数量", 100, true);
+        Ui.Column(items, "Location", "位置", 220); Ui.Column(items, "Name", "物品名称", 240, fill: true); Ui.Column(items, "EnglishName", "英文名称", 200); Ui.Column(items, "ID", "物品 ID", 220); Ui.Column(items, "Amount", "数量", 100, true);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 45)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var bar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
-        itemSearch.Margin = new Padding(0, 6, 16, 0); itemSearch.TextChanged += (_, _) => { if (!refreshing) RefreshItems(); };
-        bar.Controls.Add(itemSearch); var add = Ui.Button("＋ 新增物品到营地", AddItem, true); editButtons.Add(add); bar.Controls.Add(add);
+        var add = Ui.Button("＋ 新增物品到营地", AddItem, true); editButtons.Add(add); bar.Controls.Add(add);
         catalogStatus.Dock = DockStyle.Fill; catalogStatus.Font = new Font(Font.FontFamily, 9); catalogStatus.ForeColor = Ui.Muted;
         layout.Controls.Add(bar, 0, 0); layout.Controls.Add(catalogStatus, 0, 1); layout.Controls.Add(items, 0, 2);
-        Page("物品", "可修改营地库存及部队已装备物品的数量。新增物品仅放入营地库存，优先使用空槽。\r\n独立装备的多份副本请用新增窗口的「新增槽数」；每槽数量对应存档 Amount。", layout);
+        Page("物品", "可修改营地库存及部队已装备物品的数量。新增物品仅放入营地库存，优先使用空槽。\r\n在新增窗口中点击「添加」即可加入营地，重复点击可添加多份；每槽数量对应存档 Amount，可直接在表格中修改。", layout);
     }
     private void ConnectEditing(DataGridView grid)
     {
@@ -205,7 +205,8 @@ public sealed class MainForm : Form
             units.Rows.Clear();
             foreach (var unit in regiments)
             {
-                var o = unit.Data; int row = units.Rows.Add(unit.Location, unit.Name, Value(o,"Manpower"), Value(o,"TargetManpower"), Value(o,"MaxManpower"), Value(o,"CurrentExperience"), Value(o,"CurrentLevel"), JsonData.Text(o,"UnitID"));
+                var o = unit.Data; string unitId = JsonData.Text(o,"UnitID");
+                int row = units.Rows.Add(unit.Location, unit.Name, Value(o,"Manpower"), Value(o,"TargetManpower"), Value(o,"MaxManpower"), Value(o,"CurrentExperience"), Value(o,"CurrentLevel"), unitCatalog.NameOf(unitId), unitCatalog.EnglishNameOf(unitId), unitId);
                 BindRow(units.Rows[row], o);
             }
             officers.Rows.Clear();
@@ -233,12 +234,9 @@ public sealed class MainForm : Form
         try
         {
             items.Rows.Clear(); if (doc == null) return;
-            string search = itemSearch.Text.Trim();
             foreach (var item in doc.Items())
             {
-                string name = catalog.NameOf(item.Id);
-                if (search.Length > 0 && !(item.Location + " " + item.Id + " " + name).Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
-                int row = items.Rows.Add(item.Location, name, item.Id, Value(item.Item, "Amount")); BindRow(items.Rows[row], item.Item);
+                int row = items.Rows.Add(item.Location, catalog.NameOf(item.Id), catalog.EnglishNameOf(item.Id), item.Id, Value(item.Item, "Amount")); BindRow(items.Rows[row], item.Item);
             }
         }
         finally { refreshing = prior; }
@@ -271,10 +269,11 @@ public sealed class MainForm : Form
     {
         if (doc == null || !Commit()) return;
         if (catalog.Items.Count == 0) { ChooseCatalog(); if (catalog.Items.Count == 0) return; }
-        using var dialog = new AddItemForm(catalog);
-        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.SelectedId == null) return;
-        try { doc.AddItem(dialog.SelectedId, dialog.Amount, catalog, dialog.Copies); itemSearch.Clear(); RefreshAll(); tabs.SelectedIndex = 3; status.Text = $"已加入营地：{catalog.NameOf(dialog.SelectedId)}，{dialog.Copies} 个槽，每槽 {dialog.Amount}。尚未保存。"; }
-        catch (Exception ex) { Error(ex); }
+        string lastAdded = "";
+        using var dialog = new AddItemForm(catalog, item => { doc.AddItem(item.Id, 1, catalog, 1); lastAdded = item.Name; });
+        dialog.ShowDialog(this);
+        if (dialog.AddedTotal == 0) return;
+        RefreshAll(); tabs.SelectedIndex = 3; status.Text = $"已加入营地 {dialog.AddedTotal} 件物品（最新：{lastAdded}）。尚未保存。";
     }
     private void ChooseCatalog()
     {
@@ -289,7 +288,7 @@ public sealed class MainForm : Form
     }
     private void SetCatalog(ItemCatalog value)
     {
-        catalog = value; catalogStatus.Text = $"已加载 {catalog.Items.Count} 种物品 · 使用本机 GameData 与中文名称；可通过上方按钮切换数据目录。"; RefreshItems();
+        catalog = value; unitCatalog = UnitCatalog.Load(value.SourceDirectory); catalogStatus.Text = $"已加载 {catalog.Items.Count} 种物品 · 使用本机 GameData 与中文名称；可通过上方按钮切换数据目录。"; RefreshItems();
     }
     private void LoadCatalogAutomatically()
     {
@@ -325,7 +324,7 @@ public sealed class MainForm : Form
             tabs.SelectedIndex = 3; items.CurrentCell = items.Rows[0].Cells["Amount"]; items.BeginEdit(true); ((TextBox)items.EditingControl!).Text = "7"; items.EndEdit();
             if (JsonData.Int(doc.Items()[0].Item,"Amount") != 7) throw new Exception("UI amount edit failed");
             for (int i = 0; i < tabs.TabCount; i++) { tabs.SelectedIndex = i; Refresh(); using var b = new Bitmap(Width, Height); DrawToBitmap(b, new Rectangle(0, 0, Width, Height)); b.Save(Path.Combine(output, $"ui-{i}.png")); }
-            using (var add = new AddItemForm(catalog)) { add.Show(this); add.Refresh(); using var b = new Bitmap(add.Width, add.Height); add.DrawToBitmap(b, new Rectangle(0, 0, add.Width, add.Height)); b.Save(Path.Combine(output,"ui-add.png")); add.Close(); }
+            using (var add = new AddItemForm(catalog, item => doc.AddItem(item.Id, 1, catalog, 1))) { add.Show(this); add.Refresh(); using (var b = new Bitmap(add.Width, add.Height)) { add.DrawToBitmap(b, new Rectangle(0, 0, add.Width, add.Height)); b.Save(Path.Combine(output,"ui-add.png")); } add.SmokeFilter("Bayonet", true, false, false); add.Refresh(); using (var b = new Bitmap(add.Width, add.Height)) { add.DrawToBitmap(b, new Rectangle(0, 0, add.Width, add.Height)); b.Save(Path.Combine(output,"ui-add-filtered.png")); } add.Close(); }
             var result = doc.Save(Path.Combine(output,"ui-edited.fcs"));
             if (SaveDocument.Open(result.Path).IsDirty) throw new Exception("Saved document should be clean");
             File.WriteAllText(Path.Combine(output,"ui-smoke.txt"), "PASS: resources, unit and officer grid editing, item addition/quantity, four pages, catalog dialog, save and reopen.");

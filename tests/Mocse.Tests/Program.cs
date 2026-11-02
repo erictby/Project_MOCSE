@@ -26,6 +26,8 @@ JsonData.SetInt(doc.Regiments()[0].Data,"Manpower",120); JsonData.SetInt(doc.Reg
 Check(doc.IsDirty,"edits mark document dirty"); Throws(()=>JsonData.SetInt(doc.Player,"Cash",-1),"rejects negative resource"); Throws(()=>JsonData.SetInt(doc.Player,"Bogus",1),"rejects absent editable fields");
 var catalog=ItemCatalog.Load(@"D:\SteamLibrary\steamapps\common\Master of Command\Master of Command_Data\StreamingAssets\GameData");
 Check(catalog.Items.Count>300,"loads installed item catalog"); Check(catalog.Items.Values.Any(i=>i.Name.Any(c=>c>127)),"loads Chinese item names");
+var unitCatalog=UnitCatalog.Load(catalog.SourceDirectory);
+Check(unitCatalog.Units.Count>100,"loads installed unit catalog"); Check(unitCatalog.NameOf("PRU_Musketeers").Any(c=>c>127) && unitCatalog.EnglishNameOf("PRU_Musketeers").Length>0,"loads Chinese and English unit names");
 string itemId=catalog.Items.Keys.First(); doc.AddItem(itemId,3,catalog,3);
 var slots=JsonData.Array(doc.Player["InventorySlotSaves"])!;
 Check(slots.Count==4,"new items reuse two empty slots then append one"); Check(JsonData.Text((JsonObject)slots[1]!,"SlotMarker")=="keep","preserves metadata on reused slots");
